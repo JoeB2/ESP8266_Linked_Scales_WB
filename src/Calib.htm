@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta name="file" content="Calib.html">
+    <meta name="author" content="Joe Belson 20210822">
+    <meta name="what" content="esp8266-01 html for WiFi connected weight scales: HX711 Calibration.  Intended for W&B for small airplane M5">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plane Scales Calibration</title>
+  </head>
+<style type="text/css">
+      body {font-size: 12px; background-color: #f6f6ff;font-family: Calibri, Myriad;text-align: center;}
+      body p{text-align: left;}
+      table th{text-align: center;width: 23pt;border-bottom:2px solid rgb(8, 8, 8);}
+      table.calibrate {font-size:smaller ; margin-left:10px; margin-right: auto;  width: 300px;  border: 1px solid black; border-style:solid;}
+      table.calibrate caption {	background-color: #f79646;	color: #fff;	font-size: large;	font-weight: bold;	letter-spacing: .3em;}
+      table.calibrate thead th {
+                  padding: 3px;
+                  background-color: #fde9d9;
+                  font-size:16px;
+                  border-width: 1px;
+                  border-style: solid;
+                  border-color: #f79646 #ccc;
+      }
+      table.calibrate td {
+                  font-size: 12px;
+                  font-weight: bold;
+                  text-align: center;
+                  padding: 2px;
+                  background-color:shite;
+                  color:black;
+                  font-weight: bold;
+      }
+</style>
+<body style="text-align: left;"><tab id="saveMsg" style="padding: 50px">Calculates & Saves SCALE Factor.<br>
+  <tab style="padding: 58px; font-weight: bolder;">REMOVE Weight & Click Reset</tab>
+    <tab style="padding: 33px"><input id="bt_help" type="submit" onclick="f_help()" value="Help"></tab>
+  <hr>
+    <table class="calibrate">
+      <caption>Plane Scales Calibration</caption>
+        <thead>
+            <tr>
+                <th>Scale</th>
+                <th>RAW</th>
+                <th>Actual</th>
+                <th>SCALE</th>
+                <th>Offset</th>
+                <th><input id="reset" type="submit" value="Reset" onclick="f_reset()" style="color: black; background-color: yellow; font-weight: bold;"></th>
+                <th><input id="save" type="submit" value="Save" onclick="f_save()" style="color: aliceblue; background-color: red; font-weight: bold; visibility: hidden;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td id="scaleNo"></td>
+              <td id="reading"></td>
+              <td><input id="actual" disabled onmouseout="f_setDivider()" style="width: 80px; border: hidden;"></td>
+              <td id="SCALE"></td>
+              <td id="offset"></td>
+              <td></td>
+            </tr>
+        </tbody>
+    </table>
+      <hr>
+      <p id="help" style="visibility:collapse;">
+                1) Clear scale of any weight.
+            <br>2) Click Reset.  SCALE goes to 1.  "Save" button appears. Offset Value changes.
+            <br>3) Place known weight on scale.
+            <br>4) Enter the known weight's value under "Actual Weight".
+            <br>5) Verify SCALE value has computed. (Raw Weight &divide; Known Weight)
+            <br>6) Click Save.
+      </p>
+      <p id="msgArea" style="visibility: collapse;">Message Area</p>
+      <p id="msgJSON" style="visibility: collapse;">Sock Message</p>
+      <p id="msgReset" style="visibility: collapse;">Reset Message</p>
+      <p id="msgSave" style="visibility: collapse;">Save Message</p>
+    </tab>
+  </body>
+            
+  <script language = "javascript" type = "text/javascript">
+
+      const args = location.search;
+      const urlParams = new URLSearchParams(args);
+      window.scale = urlParams.get('scaleNo');
+      document.getElementById("scaleNo").innerHTML=window.scale;
+
+      let webSock       = new WebSocket('ws://'+window.location.hostname+':80');
+      webSock.onopen    = function(evt){f_webSockOnOpen(evt);}
+      webSock.onmessage = function(evt){f_webSockOnMessage(evt);}
+      webSock.onerror   = function(evt){f_webSockOnError(evt);}
+
+      function f_webSockOnMessage(evt){
+        if(typeof evt.data === "string"){
+
+          j=JSON.parse(evt.data);
+              
+                    if(scale==j.scaleNo){
+                          window.reading =Number(j.reading);
+                          window.SCALE   =Number(isNaN(j.SCALE)?1:j.SCALE);
+                          window.offset  =Number(j.offset);
+
+                          window.weight  = Math.round(100*(window.reading-window.offset)/window.SCALE)/100;
+
+                          document.getElementById("reading").innerHTML=window.reading;
+                          document.getElementById("SCALE").innerHTML=window.SCALE;
+                          document.getElementById("offset").innerHTML=window.offset;
+
+                          if( j.isSave && !j.isTare){
+                                document.getElementById("save").style.visibility="visible";
+                                document.getElementById("actual").disabled=false;
+                          }
+                          j.weight=window.weight;
+                          document.getElementById("msgJSON").innerHTML=JSON.stringify(j);
+                    }// if scaaleNO
+        }
+      }  // END: Func def: webSockOnMessage
+      function f_webSockOnOpen(evt){
+                var msg = document.getElementById("msgArea");
+                msg.style.wordWrap = "break-word";
+                msg.style.color = "green";
+                msg.innerHTML = "WebSock: CONNECTED"
+      }
+      function f_webSockOnError(evt){
+                var msg = document.getElementById("msgArea");
+                msg.style.wordWrap = "break-word";
+                msg.style.color = "red";
+                msg.innerHTML = "WebSock: ERROR";
+      }
+      function f_setDivider(){
+        const reading =document.getElementById("reading").innerHTML;
+        const actual = document.getElementById("actual").value;
+        const offset = document.getElementById("offset").innerHTML;
+
+        document.getElementById("SCALE").innerHTML =
+                    (reading != "0" && actual.length)?
+                    Math.round(10000*(reading-offset)/actual)/10000:1;
+      }
+      function f_reset(){
+        const reading=document.getElementById("reading").innerHTML;
+        const SCALE=document.getElementById("SCALE").innerHTML;
+
+        var tmp =
+               "{\"scaleNo\":"+document.getElementById("scaleNo").innerHTML
+                +",\"reading\":"+reading
+                +",\"SCALE\":1"+",\"offset\":"+reading
+                +",\"isTare\":1,\"isSave\":1}";
+
+                document.getElementById("msgReset").innerHTML = "reset: "+tmp;
+
+            webSock.send(tmp);
+      }
+      function f_save(){
+        const reading=document.getElementById("reading").innerHTML;
+        const actual=document.getElementById("actual").value;
+        const offset=document.getElementById("offset").innerHTML;
+
+        const SCALE=Math.round(10000*((reading-offset)/actual))/10000;
+        if(isNaN(SCALE))SCALE=1;
+
+        console.log("SCALE: " + scale + "\treading:"+reading+"\tSCALE: "+SCALE+"\tactual: "+actual+"\n");
+        
+        var tmp = "{\"scaleNo\":" +document.getElementById("scaleNo").innerHTML
+                        +",\"reading\":" +reading
+                        +",\"SCALE\":" +SCALE
+                        +",\"offset\":"+offset
+                        +",\"isTare\":0,\"isSave\":1}";
+
+        document.getElementById("msgSave").innerHTML="Save: " + tmp;
+
+        webSock.send(tmp);
+      }
+      function f_help(){
+        if(document.getElementById("help").style.visibility=="collapse"){
+          document.getElementById("help").style.visibility="initial";
+          document.getElementById("msgArea").style.visibility="initial";
+          document.getElementById("msgJSON").style.visibility="initial";
+          document.getElementById("msgReset").style.visibility="initial";
+          document.getElementById("msgSave").style.visibility="initial";
+          document.getElementById("bt_help").value="un-Help";
+        }
+        else{
+           document.getElementById("help").style.visibility="collapse";
+           document.getElementById("bt_help").value="Help";
+           document.getElementById("msgArea").style.visibility="collapse";
+           document.getElementById("msgJSON").style.visibility="collapse";
+           document.getElementById("msgReset").style.visibility="collapse";
+           document.getElementById("msgSave").style.visibility="collapse";
+        }
+      }
+  </script>
+</html>
